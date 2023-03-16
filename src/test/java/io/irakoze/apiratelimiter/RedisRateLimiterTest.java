@@ -1,67 +1,78 @@
 package io.irakoze.apiratelimiter;
 
-import org.junit.After;
-import org.junit.Before;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
+import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
-public class RedisRateLimiterTest {
-    private static final int MAX_REQUESTS_PER_SECOND = 10;
-    private static final int MAX_REQUESTS_PER_MONTH = 10000;
-    private static final int MAX_REQUESTS_PER_SYSTEM = 1000000;
+class RedisRateLimiterTest {
+    private RedisRateLimiter redisRateLimiter;
 
-    private JedisPool jedisPool;
-    private RedisRateLimiter rateLimiter;
+    @Mock
+    JedisPool jedisPool = RedisConfig.getJedisPool();;
 
-    @Before
+    @BeforeEach
     public void setUp() {
-        jedisPool = new JedisPool("localhost");
-        jedisPool.getResource().flushAll();
-
-        rateLimiter = new RedisRateLimiter(jedisPool);
-    }
-
-    @After
-    public void tearDown() {
-        jedisPool.close();
+        MockitoAnnotations.initMocks(this);
+        this.redisRateLimiter = new RedisRateLimiter(jedisPool);
     }
 
     @Test
-    public void testRateLimiting() throws InterruptedException {
-        ApiClient client1 = new ApiClient("client1");
-        ApiClient client2 = new ApiClient("client2");
+    public void testIsRateLimited_withLowUsage_shouldReturnFalse() {
+        ApiClient client = new ApiClient("client1");
 
-        // Make requests from client1 and client2 until they hit the rate limit
-        for (int i = 0; i < MAX_REQUESTS_PER_SECOND; i++) {
-            assertFalse(rateLimiter.isRateLimited(client1));
-            assertFalse(rateLimiter.isRateLimited(client2));
-        }
+        Jedis jedisMock = mock(Jedis.class);
+        when(jedisPool.getResource()).thenReturn(jedisMock);
+        when(jedisMock.get("system")).thenReturn("0");
+        when(jedisMock.get("month:client1")).thenReturn("0");
+        when(jedisMock.get("second:client1")).thenReturn("0");
 
-        assertTrue(rateLimiter.isRateLimited(client1));
-        assertTrue(rateLimiter.isRateLimited(client2));
+        assertFalse(redisRateLimiter.isRateLimited(client));
+    }
 
-        // Wait for 1 second to reset the second count
-        Thread.sleep(1000);
+    @Test
+    public void testIsRateLimited_withSystemLimitExceeded_shouldReturnTrue() {
+        ApiClient client = new ApiClient("client1");
 
-        // Make another request from client1, which should succeed
-        assertFalse(rateLimiter.isRateLimited(client1));
+        Jedis jedisMock = mock(Jedis.class);
+        when(jedisPool.getResource()).thenReturn(jedisMock);
+        when(jedisMock.get("system")).thenReturn("1001");
+        when(jedisMock.get("month:client1")).thenReturn("0");
+        when(jedisMock.get("second:client1")).thenReturn("0");
 
-        // Make more requests from client1 and client2 until they hit the monthly limit
-        for (int i = 0; i < MAX_REQUESTS_PER_MONTH - MAX_REQUESTS_PER_SECOND; i++) {
-            assertFalse(rateLimiter.isRateLimited(client1));
-            assertFalse(rateLimiter.isRateLimited(client2));
-        }
+        assertTrue(redisRateLimiter.isRateLimited(client));
+    }
 
-        assertTrue(rateLimiter.isRateLimited(client1));
-        assertTrue(rateLimiter.isRateLimited(client2));
+    @Test
+    public void testIsRateLimited_withMonthLimitExceeded_shouldReturnTrue() {
+        ApiClient client = new ApiClient("client1");
 
-        // Wait for 1 month to reset the monthly count
-        Thread.sleep(31 * 24 * 60 * 60 * 1000L);
+        Jedis jedisMock = mock(Jedis.class);
+        when(jedisPool.getResource()).thenReturn(jedisMock);
+        when(jedisMock.get("system")).thenReturn("0");
+        when(jedisMock.get("month:client1")).thenReturn("40961");
+        when(jedisMock.get("second:client1")).thenReturn("0");
 
-        // Make another request from client1, which should succeed
-        assertFalse(rateLimiter.isRateLimited(client1));
+        assertTrue(redisRateLimiter.isRateLimited(client));
+    }
+
+    @Test
+    public void testIsRateLimited_withSecondLimitExceeded_shouldReturnTrue() {
+        ApiClient client = new ApiClient("client1");
+
+        Jedis jedisMock = mock(Jedis.class);
+        when(jedisPool.getResource()).thenReturn(jedisMock);
+        when(jedisMock.get("system")).thenReturn("0");
+        when(jedisMock.get("month:client1")).thenReturn("0");
+        when(jedisMock.get("second:client1")).thenReturn("26");
+
+        assertTrue(redisRateLimiter.isRateLimited(client));
     }
 }
-

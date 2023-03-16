@@ -12,15 +12,15 @@ import java.util.concurrent.TimeUnit;
 
 public class RedisRateLimiter implements RateLimiterMiddleware {
     private JedisPool jedisPool;
-    private final int maxRequestsPerSecond = 40960;
+    private final int maxRequestsPerSecond = 25;
     private final int maxRequestsPerMonth = 40960;
-    private final int maxRequestsPerSystem = 40960;
+    private final int maxRequestsPerSystem = 1000;
     private static final String REDIS_KEY_PREFIX = "api-rate-limiter";
     private static final Logger Log = LoggerFactory.getLogger(RedisRateLimiter.class);
     private final Map<String, TokenBucket> tokenBuckets = new ConcurrentHashMap<>();
 
-    public RedisRateLimiter(JedisPool jedisPool) {
-        this.jedisPool = jedisPool;
+    public RedisRateLimiter(JedisPool pool) {
+        this.jedisPool = pool;
     }
 
     @Override
